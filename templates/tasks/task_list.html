@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block title %}Tasks | Task Manager{% endblock %}
+
+{% block content %}
+<h2>Task List</h2>
+
+<form method="get" class="card">
+    <div class="form-row">
+        {{ filter_form.query.label_tag }}
+        {{ filter_form.query }}
+    </div>
+    <div class="form-row">
+        {{ filter_form.category.label_tag }}
+        {{ filter_form.category }}
+    </div>
+    <div class="form-row">
+        {{ filter_form.status.label_tag }}
+        {{ filter_form.status }}
+    </div>
+    <button type="submit">Apply Filter</button>
+    <a href="{% url 'task_list' %}">Reset</a>
+</form>
+
+{% if tasks %}
+    <ul>
+        {% for task in tasks %}
+            <li class="card">
+                <h3>
+                    <a href="{% url 'task_detail' task.id %}">{{ task.title }}</a>
+                </h3>
+                <p>Category: {{ task.category.name }}</p>
+                <p>Priority: {{ task.priority.label }}</p>
+                <p>Deadline: {{ task.deadline }}</p>
+                {% if task.is_completed %}
+                    <p class="done">Status: Completed</p>
+                {% else %}
+                    <p class="pending">Status: Pending</p>
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ul>
+{% else %}
+    <p>No tasks found for this filter.</p>
+{% endif %}
+{% endblock %}

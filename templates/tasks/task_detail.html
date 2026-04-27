@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block title %}Task Detail | Task Manager{% endblock %}
+
+{% block content %}
+<article class="card">
+    <h2>{{ task.title }}</h2>
+    <p><strong>Description:</strong> {{ task.description }}</p>
+    <p><strong>Category:</strong> {{ task.category.name }}</p>
+    <p><strong>Priority:</strong> {{ task.priority.label }} (Level {{ task.priority.level }})</p>
+    <p><strong>Deadline:</strong> {{ task.deadline }}</p>
+    <p><strong>Created:</strong> {{ task.created_at }}</p>
+    {% if task.is_completed %}
+        <p class="done"><strong>Status:</strong> Completed</p>
+    {% else %}
+        <p class="pending"><strong>Status:</strong> Pending</p>
+    {% endif %}
+</article>
+
+<p>
+    <a href="{% url 'task_update' task.id %}">Edit Task</a> |
+    <a href="{% url 'task_delete' task.id %}">Delete Task</a> |
+    <a href="{% url 'task_list' %}">Back to List</a>
+</p>
+{% endblock %}

@@ -1,0 +1,357 @@
+================================================================================
+           DJANGO ORM QUERIES — Task Management Project
+================================================================================
+
+MODELS QUICK REFERENCE
+-----------------------
+  Category  : id, name
+  Priority  : id, label, level
+  Task      : id, title, description, category (FK), priority (FK),
+              deadline, is_completed, created_at, updated_at
+
+FOREIGN KEY RELATIONSHIPS
+  Task.category  --> Category  (CASCADE delete, related_name="tasks")
+  Task.priority  --> Priority  (PROTECT delete, related_name="tasks")
+
+================================================================================
+  STEP 0 — OPEN DJANGO SHELL
+================================================================================
+
+  python manage.py shell
+
+  # Import models inside the shell (run this first every time)
+  from tasks.models import Task, Category, Priority
+  from django.utils import timezone
+  from django.db.models import Q, Count, Min, Max
+
+================================================================================
+  STEP 1 — CREATE (Insert records)
+================================================================================
+
+# --- Category ---
+# Creates a new Category object and saves it to the database immediately
+cat = Category.objects.create(name="Work")
+cat = Category.objects.create(name="Personal")
+cat = Category.objects.create(name="Study")
+
+# --- Priority ---
+# level acts as a numeric rank (1 = highest urgency, etc.)
+p_high   = Priority.objects.create(label="High",   level=1)
+p_medium = Priority.objects.create(label="Medium", level=2)
+p_low    = Priority.objects.create(label="Low",    level=3)
+
+# --- Task (two-step: build object then save) ---
+task = Task(
+    title       = "Submit assignment",
+    description = "Complete the IWS project and submit on portal",
+    category    = Category.objects.get(name="Study"),
+    priority    = Priority.objects.get(label="High"),
+    deadline    = "2026-04-30",
+    is_completed= False,
+)
+task.save()
+
+# --- Task (one-step shortcut using create()) ---
+Task.objects.create(
+    title       = "Buy groceries",
+    description = "Milk, eggs, bread",
+    category    = Category.objects.get(name="Personal"),
+    priority    = Priority.objects.get(label="Low"),
+    deadline    = "2026-04-25",
+)
+
+================================================================================
+  STEP 2 — READ (Retrieve records)
+================================================================================
+
+# --- all() — fetch every record in the table ---
+Task.objects.all()
+Category.objects.all()
+Priority.objects.all()
+
+# --- get() — fetch exactly ONE record (raises error if 0 or 2+ found) ---
+task = Task.objects.get(id=1)
+cat  = Category.objects.get(name="Work")
+pri  = Priority.objects.get(label="High")
+
+# --- first() / last() — first or last record (returns None if empty) ---
+Task.objects.first()
+Task.objects.last()
+
+# --- count() — total number of records ---
+Task.objects.count()
+Category.objects.count()
+
+# --- exists() — check if any record matches (returns True/False) ---
+Task.objects.filter(is_completed=True).exists()
+
+# --- values() — returns dictionaries instead of model objects (lighter) ---
+Task.objects.values("id", "title", "is_completed")
+
+# --- values_list() — returns tuples ---
+Task.objects.values_list("title", flat=True)   # flat=True → plain list
+
+================================================================================
+  STEP 3 — FILTER (Conditional retrieval)
+================================================================================
+
+# --- Exact match ---
+Task.objects.filter(is_completed=False)
+Task.objects.filter(category__name="Work")       # traverses FK with __
+Task.objects.filter(priority__label="High")
+
+# --- Case-insensitive contains (like SQL LIKE '%...%') ---
+Task.objects.filter(title__icontains="submit")
+Task.objects.filter(description__icontains="project")
+
+# --- Starts / ends with ---
+Task.objects.filter(title__istartswith="buy")
+Task.objects.filter(title__iendswith="ment")
+
+# --- Date comparisons ---
+Task.objects.filter(deadline__lt="2026-05-01")    # deadline < May 1
+Task.objects.filter(deadline__gte="2026-04-22")   # deadline >= today
+Task.objects.filter(deadline__year=2026)
+Task.objects.filter(created_at__date=timezone.now().date())
+
+# --- Field lookups ---
+#   __exact   = exact match (default)
+#   __iexact  = case-insensitive exact
+#   __contains / __icontains  = substring
+#   __lt / __lte              = less than / less than or equal
+#   __gt / __gte              = greater than / greater than or equal
+#   __in                      = value in a list
+#   __isnull                  = field is NULL
+
+# --- __in example ---
+Task.objects.filter(priority__level__in=[1, 2])   # High or Medium tasks
+
+# --- Exclude (opposite of filter) ---
+Task.objects.exclude(is_completed=True)           # all incomplete tasks
+Task.objects.exclude(category__name="Personal")
+
+================================================================================
+  STEP 4 — UPDATE (Modify records)
+================================================================================
+
+# --- Update a single object ---
+task = Task.objects.get(id=1)
+task.is_completed = True
+task.save()
+
+# --- Bulk update with update() — more efficient, one SQL query ---
+# Mark all "Work" category tasks as completed
+Task.objects.filter(category__name="Work").update(is_completed=True)
+
+# Change all Low priority tasks' deadline
+Task.objects.filter(priority__label="Low").update(deadline="2026-05-15")
+
+# Rename a category
+Category.objects.filter(name="Study").update(name="Education")
+
+================================================================================
+  STEP 5 — DELETE (Remove records)
+================================================================================
+
+# --- Delete a single record ---
+task = Task.objects.get(id=1)
+task.delete()
+
+# --- Bulk delete with filter() ---
+# Delete all completed tasks
+Task.objects.filter(is_completed=True).delete()
+
+# Delete a category (also deletes related tasks due to CASCADE)
+Category.objects.get(name="Personal").delete()
+
+# NOTE: Deleting a Priority will FAIL if tasks reference it (PROTECT policy)
+# Priority.objects.get(label="High").delete()  <-- raises ProtectedError
+
+================================================================================
+  STEP 6 — ORDERING (Sorting results)
+================================================================================
+
+# Ascending order (default)
+Task.objects.all().order_by("deadline")
+Task.objects.all().order_by("priority__level")    # sort by numeric level
+
+# Descending order (prefix field with -)
+Task.objects.all().order_by("-created_at")
+Task.objects.all().order_by("-priority__level")
+
+# Multi-field ordering: incomplete first, then nearest deadline
+Task.objects.all().order_by("is_completed", "deadline")
+
+# The default ordering in Task.Meta is:
+#   ordering = ["is_completed", "deadline", "-created_at"]
+
+================================================================================
+  STEP 7 — Q OBJECTS (Complex OR / AND / NOT queries)
+================================================================================
+
+from django.db.models import Q
+
+# --- OR  : tasks that are completed OR have High priority ---
+Task.objects.filter(Q(is_completed=True) | Q(priority__label="High"))
+
+# --- AND : tasks that are NOT completed AND have deadline before May 2026 ---
+Task.objects.filter(Q(is_completed=False) & Q(deadline__lt="2026-05-01"))
+
+# --- NOT : tasks that are NOT in "Work" category ---
+Task.objects.filter(~Q(category__name="Work"))
+
+# --- Combining Q with regular filter ---
+# Incomplete tasks in "Study" category OR with High priority
+Task.objects.filter(
+    Q(category__name="Study") | Q(priority__label="High"),
+    is_completed=False
+)
+
+# --- Search bar simulation: title or description contains keyword ---
+keyword = "project"
+Task.objects.filter(
+    Q(title__icontains=keyword) | Q(description__icontains=keyword)
+)
+
+================================================================================
+  STEP 8 — SELECT_RELATED (Optimized JOIN for ForeignKey)
+================================================================================
+
+# Without select_related: each access to task.category or task.priority
+# fires a separate SQL query (N+1 problem)
+tasks = Task.objects.all()
+for t in tasks:
+    print(t.category.name)   # Extra DB hit every loop iteration
+
+# With select_related: Django does a SQL JOIN upfront, only 1 query total
+tasks = Task.objects.select_related("category", "priority").all()
+for t in tasks:
+    print(t.category.name, t.priority.label)   # No extra queries
+
+# Filtering after select_related
+Task.objects.select_related("category", "priority").filter(is_completed=False)
+
+# When to use: for ForeignKey / OneToOne fields
+
+================================================================================
+  STEP 9 — PREFETCH_RELATED (Optimized JOIN for Reverse FK / ManyToMany)
+================================================================================
+
+# Access all tasks belonging to each category (reverse FK via related_name)
+# Without prefetch: hits DB for every category (N+1 problem)
+categories = Category.objects.all()
+for c in categories:
+    print(c.tasks.all())   # Extra query per category
+
+# With prefetch_related: 2 queries total, Python-side joining
+categories = Category.objects.prefetch_related("tasks").all()
+for c in categories:
+    print(c.name, "-->", c.tasks.count())
+
+# Combining select_related and prefetch_related
+tasks = Task.objects.select_related("category", "priority").prefetch_related("category__tasks")
+
+# When to use: for reverse ForeignKey (related_name) or ManyToManyField
+
+================================================================================
+  STEP 10 — AGGREGATION (Summary / Stats queries)
+================================================================================
+
+from django.db.models import Count, Min, Max, Avg
+
+# Total tasks
+Task.objects.count()
+
+# Count of tasks per category
+Category.objects.annotate(task_count=Count("tasks"))
+# Access result: cat.task_count
+
+# Count tasks per priority level
+Priority.objects.annotate(task_count=Count("tasks")).order_by("level")
+
+# Earliest and latest deadline across all tasks
+Task.objects.aggregate(earliest=Min("deadline"), latest=Max("deadline"))
+
+# Count completed vs incomplete
+Task.objects.filter(is_completed=True).count()
+Task.objects.filter(is_completed=False).count()
+
+================================================================================
+  STEP 11 — COMBINED / ADVANCED EXAMPLES
+================================================================================
+
+# Incomplete tasks with High priority, ordered by deadline
+Task.objects.filter(
+    is_completed=False,
+    priority__label="High"
+).order_by("deadline").select_related("category", "priority")
+
+# Tasks due in April 2026
+Task.objects.filter(deadline__year=2026, deadline__month=4)
+
+# All categories that have at least one task
+Category.objects.filter(tasks__isnull=False).distinct()
+
+# Categories with no tasks
+Category.objects.filter(tasks__isnull=True)
+
+# Top priority tasks (level=1) that are not completed
+Task.objects.filter(priority__level=1, is_completed=False).order_by("deadline")
+
+# Count tasks in each category (using values + annotate)
+from django.db.models import Count
+Task.objects.values("category__name").annotate(total=Count("id")).order_by("-total")
+
+================================================================================
+  STEP 12 — QUICK SHELL TEST SEQUENCE
+================================================================================
+
+
+
+from tasks.models import Task, Category, Priority
+from django.db.models import Q, Count
+
+# Check record counts
+print("Categories:", Category.objects.count())
+print("Priorities:", Priority.objects.count())
+print("Tasks:", Task.objects.count())
+
+# List all tasks with their category and priority
+for t in Task.objects.select_related("category", "priority"):
+    print(f"[{'DONE' if t.is_completed else '----'}] {t.title} | "
+          f"{t.category.name} | {t.priority.label} | Due: {t.deadline}")
+
+# Tasks with High priority OR overdue (before today)
+from django.utils import timezone
+overdue_or_high = Task.objects.filter(
+    Q(priority__label="High") | Q(deadline__lt=timezone.now().date())
+)
+print("\nOverdue or High priority tasks:", overdue_or_high.count())
+
+# Category task summary
+for cat in Category.objects.annotate(n=Count("tasks")):
+    print(f"{cat.name}: {cat.n} task(s)")
+
+================================================================================
+  COMMON ERRORS & NOTES
+================================================================================
+
+  DoesNotExist       : get() found no matching record
+                       → check spelling or use filter().first() instead
+
+  MultipleObjectsReturned : get() found more than one record
+                       → use filter() when multiple results are expected
+
+  ProtectedError     : tried to delete a Priority that tasks still reference
+                       → delete or reassign tasks first (PROTECT policy)
+
+  IntegrityError     : violated unique constraint (duplicate name/label/level)
+                       → use get_or_create() to avoid duplicates
+
+  # Safe alternative to get()
+  obj, created = Category.objects.get_or_create(name="Work")
+  # created = True if inserted new, False if already existed
+
+================================================================================
+  END OF REFERENCE
+================================================================================
